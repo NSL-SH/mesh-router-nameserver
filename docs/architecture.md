@@ -6,7 +6,8 @@
 > gated `ip.<zone>` ([`ip-names.md`](ip-names.md)), per-user zone delegation with
 > DNS-01 and gateway certificates (Phase 1, §13.2); since 2026-10-30 every box gets a
 > dormant zone and goes live by itself once the parent delegates it (§10.3). Staging has
-> a delegated user (wisera); prod runs the same stack with none delegated yet. It
+> a delegated user (wisera); prod runs the same stack with none delegated yet. The cutoff
+> (§13.3) is done: staging 2026-11-09, prod 2026-11-14, Worker retired on prod 2026-11-16. It
 > replaces the June 2026 design (per-user `dnsDirect` flag, Cloudflare kept in front);
 > §14 records what changed and why.
 
@@ -604,7 +605,7 @@ extension; it needs the same probe on v6.
 | **mesh-router-agent** | Sends hostnames with route registration; hints the backend on cert change. |
 | **Maison + mesh template** | Dot-form routes canonical, dash form as alias; nip.io routes no longer rendered. |
 | **mesh-dashboard** | Per-host state table and the owner's `gateway`/`auto` toggle (§4.3). |
-| **mesh-router-gateway-cf** | Retired. |
+| **mesh-router-gateway-cf** | Retired: staging 2026-11-09, prod 2026-11-16; repo archived. |
 | **Ops** | Zone export → git; mail moves (§9.2); second NS host; registrar delegation (Namecheap, glue first). PSL application on its own track. |
 
 ## 12. Failure modes
@@ -644,7 +645,7 @@ For a delegated user:
 - **dot form** (`immich.john.nsl.sh`) runs entirely on the new design: our
   nameserver, DNS-01 wildcard, direct answer or the new gateway;
 - **dash form** (`immich-john.nsl.sh`) is a sibling of `john.nsl.sh`, not under it, so
-  it stays on Cloudflare and the Worker, unchanged. Both forms work side by side;
+  it stayed on Cloudflare and the Worker until the cutoff. Both forms work side by side;
 - **rollback** is deleting the NS record(s); the lag is their TTL (300 s) plus the
   backend's three checks before the box drops its DNS-01 certificates.
 
@@ -718,7 +719,9 @@ sample, ≤ 9 s after the start. **Passed.** Every step of the drill now passes.
 3. **Cutoff**: SendGrid records verified on our nameserver, static zone served,
    registrar NS switch, Worker retired. Our apex already carries `<user> NS` for every
    user zone, so every box goes live with the switch, with no step per user. Rehearsed on `inojob.com` first. Gates and
-   steps: [`cutoff-runbook.md`](cutoff-runbook.md).
+   steps: [`cutoff-runbook.md`](cutoff-runbook.md). **Done**: `inojob.com` 2026-11-09
+   (Cloudflare zone and Worker deleted the same day), `nsl.sh` switched 2026-11-14 and
+   drained 2026-11-16 (Worker and its route deleted).
 
 ## 14. What changed from the June 2026 design
 

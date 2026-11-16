@@ -171,12 +171,14 @@ the gateway sees only the Cloudflare edge. Appending keeps that, at the price of
 client-chosen leftmost value on requests that reach the gateway directly (today only by
 `--resolve`). The box's Caddy is unaffected either way (`trusted_proxies_strict`).
 **Cutoff runbook: set `GATEWAY_FORWARDED_FOR=replace`** once no request comes through
-Cloudflare.
+Cloudflare. Done on prod 2026-11-16 with the Worker's retirement: yundera-prod's gateway set
+then, nsp1's had it from its first deploy ([`cutoff-runbook.md`](cutoff-runbook.md) §6.2).
 
 **Built 2026-10-27 (step 4), staging.** The gateway's TLS port is an OpenResty `stream`
 server (`sni_router.lua`); the HTTP TLS server moved to a local unix socket behind it.
 Passthrough needs a real user (the label resolves) and a TLS-capable route, so
-`gateway.entrypoint.<zone>` (the Worker's fallback host, two labels) and unknown names
+`gateway.entrypoint.<zone>` (two labels; it was the Worker's fallback host, its DNS record is
+gone since 2026-11-16) and unknown names
 are terminated. OpenResty has no `stream_realip` module, so terminated connections
 reach the HTTP server without a client address (behind Cloudflare it was the edge's
 anyway): **to solve before the cutoff**, when dash names reach the gateway directly
@@ -607,7 +609,7 @@ Step 6 rollout order (each environment):
    loaded certificate covers, so every box ordered a Let's Encrypt certificate per dash name and
    for its non-delegated root (HTTP-01 through the Worker), filling the zone's 50/week. Fixed in
    mesh-router-caddy 1.5.1 / the template Caddyfile: `(gateway_tls)` loads cert0 with `issuer internal`. `*.ip.<zone>` stays: deployment config (`CERT_EXTRA_SANS`)
-   for the Worker's IP-name path, not a user's name.
+   for the IP-name path (the agent's route domain; the retired Worker used it), not a user's name.
 2. **Gateway 1.6 once every live box holds a hop name**: it always sends
    `<label>.box.<zone>` and trusts the mesh CA only, so a box whose cert0 predates
    backend 2.0.40 gets a 502 ("certificate does not match <label>.box.<zone>"; seen on a

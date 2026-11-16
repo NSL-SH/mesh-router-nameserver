@@ -4,6 +4,9 @@
 > first by the stock sslip.io server (§4), and since 2026-10-23 by the PowerDNS
 > secondaries, which answer only IPs registered by a real box's agent (§5 is done that
 > way: [`architecture.md`](architecture.md) §3.3 and §10.2).
+> The Cloudflare Worker that first used these names is retired (staging 2026-11-09, prod
+> 2026-11-16); the names stay in use: the agent's route domain, cert0's `*.ip.<zone>`, the
+> per-IP name of every box. Worker passages below are history.
 
 ## 1. Goal
 
@@ -45,8 +48,9 @@ which is why exact parity matters.
 
 ## 3. Where the names live
 
-`nsl.sh` (and staging `inojob.com`) is hosted on **Cloudflare** with a proxied wildcard
-and the Worker route `*.nsl.sh/*`. Cloudflare DNS cannot compute answers from the name,
+`nsl.sh` (and staging `inojob.com`) was hosted on **Cloudflare** with a proxied wildcard
+and the Worker route `*.nsl.sh/*` until the cutoff (staging 2026-11-09, prod 2026-11-14;
+both zones are now on our nameservers). Cloudflare DNS cannot compute answers from the name,
 so the IP rule needs a zone whose authoritative servers are ours.
 
 | Phase | Names | How | Touches user traffic? |
@@ -115,7 +119,8 @@ Not done in Phase 1 by decision: parity first, restriction second.
   depend on it.
 - Consumers to switch from `nip.io` (run both names side by side during the move):
   - `mesh-router-agent` — `buildDomainRoute(…, 'nip.io')`, `IpRegistrar.ts`
-  - `mesh-router-gateway-cf` — `ipToNipHost`, `buildBackendUrl`
+  - `mesh-router-gateway-cf` — `ipToNipHost`, `buildBackendUrl` (switched 2026-10-28; since
+    retired, repo archived)
   - `mesh-router-backend` — `CertificateAuthority.ts` SAN `*.nip.io` → `*.ip.nsl.sh`
   - `mesh-router-auth` — allowed-suffix list in `config.ts` / `validation.ts`
   - Caddyfiles (`mesh-router-caddy`, `mesh-router-template-root`, `template-root`) — root
@@ -125,6 +130,8 @@ Not done in Phase 1 by decision: parity first, restriction second.
     Maison's route renderer (router-neutral `routes`) than edited by hand
 
 ## 7. Test: can the CF Worker reach a subzone delegated away from its own zone?
+
+> Historical (2026-10-21): the Worker is retired. Kept for the Cloudflare findings.
 
 The Worker runs on the `nsl.sh` zone and would fetch `<app>-<ip>.ip.nsl.sh` — a name
 inside its own zone but **not served** by Cloudflare. Open question: does the

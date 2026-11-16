@@ -7,8 +7,8 @@ It serves two kinds of names under the server zone (`nsl.sh` on prod, `inojob.co
 staging):
 
 - **IP-encoded names**, our own nip.io: `<app>-<dashed-ip>.ip.<zone>` → `<ip>`, answered
-  only for IPs registered by a real box's agent. The CF Worker and the gateway reach
-  boxes directly through them.
+  only for IPs registered by a real box's agent: the agent's route domain, and cert0's
+  `*.ip.<zone>`. (The retired CF Worker reached boxes through them.)
 - **Per-user zones** (`<user>.<zone>`) for users whose zone is delegated to us: the box
   or gateway address, plus the `_acme-challenge` TXT records that give the box its DNS-01
   wildcard certificate.

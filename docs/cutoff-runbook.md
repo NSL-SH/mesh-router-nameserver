@@ -3,7 +3,9 @@
 > Phase 3 of [`architecture.md`](architecture.md) §13.3: the registrar points the zone at
 > our nameservers, Cloudflare stops answering, the Worker is retired. Run by hand,
 > **`inojob.com` (staging) first**, then `nsl.sh`. Written 2026-10-28; facts below were
-> read that day, and §0 re-reads them.
+> read that day, and §0 re-reads them. **Done on both zones**: staging 2026-11-09 (§5),
+> prod switch 2026-11-14 and drain 2026-11-16 (§6). The Worker is retired and its repo
+> archived; the steps stay as a template for a future zone.
 
 | | staging | prod |
 |---|---|---|
@@ -27,7 +29,8 @@ being served by us. Boxes call `https://<zone>/router/api` and stop working with
 the apex certificate.
 
 **Rollback** is the registrar's NS set back to Cloudflare, as long as the Cloudflare
-zone still exists (§4). The lag is the parent NS TTL plus resolver caches: up to an hour
+zone still exists (§4). Once the Worker is deleted (§3) that is no longer enough: dash
+names would also need the archived Worker redeployed on the zone. The lag is the parent NS TTL plus resolver caches: up to an hour
 on `.sh`, up to two days on `.com`. Nothing is deleted on our side before §3 is done.
 
 ## 0. Gates (all must hold before the switch day)
@@ -37,7 +40,7 @@ on `.sh`, up to two days on `.com`. Nothing is deleted on our side before §3 is
 | G1 | **Backend ≥ 2.0.49** with the zone file mounted (`./zone:/app/config/zone:ro`, `DNS_STATIC_ZONE_FILE`) | `docker exec <backend> mesh-cli dns zone --dry-run`: no change, nothing unexpected skipped |
 | G2 | **Static zone matches Cloudflare** | `mesh-cli dns zone diff`: every static record "same"; the only differences are the NS set, proxied names (Cloudflare addresses), `ip` and delegated users (referrals) |
 | G3 | **Every public NS serves the same zone** | §1 query loop: same SOA serial on each NS |
-| G4 | **Gateway ≥ 1.7.0** (`stream_realip`, client address on terminated connections) | `docker ps` image tag. **Met on prod 2026-11-03** (gateway 1.9.0): a dash name of holyhorse sent straight to the prod gateway (`curl --resolve …:443:151.115.97.163`, no Cloudflare) reached a whoami behind the box's Caddy with `X-Real-Ip` = the client and `X-Forwarded-For: <client>, 151.115.97.163` (the box trusts the gateway). Today's Cloudflare path hands the client only in `Cf-Connecting-Ip` (`X-Forwarded-For` = a Cloudflare address); that path goes away at the cutoff |
+| G4 | **Gateway ≥ 1.7.0** (`stream_realip`, client address on terminated connections) | `docker ps` image tag. **Met on prod 2026-11-03** (gateway 1.9.0): a dash name of holyhorse sent straight to the prod gateway (`curl --resolve …:443:151.115.97.163`, no Cloudflare) reached a whoami behind the box's Caddy with `X-Real-Ip` = the client and `X-Forwarded-For: <client>, 151.115.97.163` (the box trusts the gateway). The Cloudflare path handed the client only in `Cf-Connecting-Ip` (`X-Forwarded-For` = a Cloudflare address); that path went away at the cutoff |
 | G5 | **Traefik holds a trusted certificate for the apex**. Staging met 2026-11-03 (Let's Encrypt, `le` resolver, nasselle config 0ca82d0). Prod configured 2026-11-04 (`le` resolver, requested by the `nsl-backend` router, contact@yundera.com, prod config fbf5feb; `acme.json` was already a file) but **not issued**: Let's Encrypt answered 429, 50 new certificates for `nsl.sh` already issued in the last 168 h (boxes ordering per-app dash-name certificates, mostly the recycled demo boxes). Restart Traefik to retry once a slot is free. **2026-11-06:** the bucket has room again (the box dash-name churn stopped with mesh-router-caddy 1.5.1 on `stable` 2026-11-05, and a Let's Encrypt backup order for gateway 2's `*.nsl.sh` went through that day): **Prod met 2026-11-06**: Traefik ordered it on its own at 11:28 UTC, when the backend's router came back after a recreate (Let's Encrypt `nsl.sh`, YR2, until 2027-02-04); `curl --resolve nsl.sh:443:151.115.97.163 https://nsl.sh/router/api/available/x` with no `-k` = 200 | §1.1, then `curl --resolve <zone>:443:<host ip> https://<zone>/router/api/available/x` with no `-k` |
 | G6 | **Each gateway holds its own trusted `*.<zone>`** (each gateway orders it with lego by DNS-01: through Cloudflare's API before the switch, the backend's apex challenge after, `phase-1.1-gateway-tls.md` §6. **Staging met 2026-11-04** on nasselle + nss1 (gateway 1.13.0, backend 2.0.60), on ZeroSSL since 2026-11-05 (`phase-1.1-gateway-tls.md` §6.3). **Prod met 2026-11-06**: both gateways (yundera-prod, nsp1) hold a ZeroSSL `*.nsl.sh` (gateway 1.15.3, backend 2.0.64, a Cloudflare token for `nsl.sh` IP-filtered to both). Ordered from ZeroSSL first, G6 no longer draws on the zone's Let's Encrypt bucket. At the switch: `GATEWAY_ACME_DNS=mesh` on each gateway, delete the Cloudflare token. `/dns/health` lists each gateway's certificate, degraded under `DNS_GATEWAY_CERT_MIN_DAYS`) | `curl --resolve <app>-<user>.<zone>:443:<gw ip> https://…` with no `-k`, through each gateway |
 | G7 | **Every active box has a user zone** (automatic since 2026-10-30: dormant on its first registration), boxes on a mesh-router-caddy with `caddy-dns/acmedns`, **≥ 1.5.2**: a delegation is loaded at once; 1.5.1 and older wait for an unrelated caddy-docker-proxy generation, so a delegated box never orders its certificates (found on the prod pilots 2026-11-06, Trello #923) | see §0.1 |
@@ -52,7 +55,7 @@ on `.sh`, up to two days on `.com`. Nothing is deleted on our side before §3 is
 After the switch the `*.<zone>` wildcard also matches `<user>.<zone>` and
 `<app>.<user>.<zone>`. For a user who is **not** delegated those names reach the box
 through the passthrough, and the box presents its gateway-CA certificate: the user apex
-breaks (it works today through Cloudflare's edge certificate and the Worker). Dash
+breaks (before the switch it worked through Cloudflare's edge certificate and the Worker). Dash
 names keep working (the gateway terminates them).
 
 Every box that registered routes since the auto-zone backend (the release after 2.0.50) has a (dormant) zone, and our apex
@@ -275,27 +278,32 @@ it as DNS: the apex, a dash name, a delegated user's apex and dot names, holyhor
 ## 3. Drain (≥ 48 h after the switch)
 
 Resolvers that cached Cloudflare's own NS set (child TTL, up to a day) keep sending
-some visitors to Cloudflare, and the Worker keeps serving them. Leave the Cloudflare
-zone, the Worker and its route untouched during the drain.
+some visitors to Cloudflare for a while. On `inojob.com` and `nsl.sh` the Worker served
+them during the drain; it is retired (staging 2026-11-09, prod 2026-11-16) and its repo
+archived. A zone moved later has no Worker: stale resolvers reach only what the
+Cloudflare zone still answers, so leave that zone untouched during the drain.
 
-1. Watch the Worker's request count (Cloudflare › Workers › the worker › Metrics) fall
-   to background noise.
-2. **`GATEWAY_FORWARDED_FOR=replace`** on every gateway (compose env, `docker compose
-   up -d`): once no request comes from the Worker, the client-chosen leftmost
-   `X-Forwarded-For` is the only thing `append` still adds. Check the client address
-   in an app behind the gateway (whoami on a test box).
-3. **Retire the Worker**: delete the `*.<zone>/*` route, then the Worker. Remove the
-   `gateway.entrypoint` line from the zone file (`dns zone --dry-run`, one pass). Unset
-   `GATEWAY_FALLBACK_URL` wherever it is still set.
+1. Watch the traffic still reaching Cloudflare for the zone fall to background noise
+   (on `nsl.sh` this was the Worker's request count, Cloudflare › Workers › Metrics).
+2. **`GATEWAY_FORWARDED_FOR=replace`** on every gateway that is not already on it
+   (compose env, `docker compose up -d`): once no request comes through Cloudflare, the
+   client-chosen leftmost `X-Forwarded-For` is the only thing `append` still adds. Both
+   prod gateways are on `replace` since 2026-11-16. Check the client address in an app
+   behind the gateway (an unauthenticated header-echo app, e.g. whoami, on a test box).
+3. Remove any record that only served Cloudflare from the zone file (`dns zone
+   --dry-run`, one pass). On `nsl.sh` that was `gateway.entrypoint`, the Worker's
+   fallback host.
 4. Commit the zone file and the Traefik/compose edits in the env's config repo.
 
 ## 4. After the drain
 
-- The Cloudflare zone stays until the rollback window is closed. Cloudflare deletes a
-  zone whose nameservers have moved away after a few days in "Moved" status (check the
-  current delay before relying on it); the committed zone file (G12) is the fallback.
-- `mesh-router-gateway-cf` is retired: archive the repo, drop the deploy steps from the
-  docs and the `cf-worker` trace segment from CLAUDE.md files.
+- The Cloudflare zone can be deleted once the drain is over. With the Worker gone a
+  rollback to Cloudflare would need the archived Worker redeployed, so keeping the zone
+  buys no quick rollback; the committed zone file (G12) is the fallback. (Cloudflare also
+  deletes a zone whose nameservers moved away after some days in "Moved" status.)
+  Staging: deleted 2026-11-09. Prod: left to the user's call (2026-11-16).
+- `mesh-router-gateway-cf` is retired: repo archived, deploy steps dropped from the docs,
+  the `cf-worker` trace segment gone from the CLAUDE.md files (done 2026-11-16).
 - Later, separately: DNSSEC (`architecture.md` §10.5, never in the same step as an NS
   change). The PSL application (`_psl` TXT) runs on its own; nothing in the cutoff depends on it.
 
@@ -356,3 +364,25 @@ zone, the Worker and its route untouched during the drain.
   the fallback orders went through on ZeroSSL. Forced renewal on nasselle through our
   nameservers: new ZeroSSL `*.inojob.com` until 2027-02-07, served after the reload.
 - Step 7: apex CAA added (config d789a1f), served by both NS.
+- Drain: none. The Cloudflare zone, the Worker and the Cloudflare token were deleted
+  the same day (user decision); the committed zone file is the reference (G12).
+
+## 6. Prod: as run
+
+### 6.1 Switch, 2026-11-14 (prod)
+
+- ~11:13 UTC: Namecheap NS → nsp1/nsp2. The `.sh` registry published them at ~11:28.
+
+### 6.2 Drain, 2026-11-16 (prod)
+
+- Config repo commit before: 043040d.
+- The Worker and its `*.nsl.sh/*` route deleted in the Cloudflare dashboard by the user.
+  `GATEWAY_FALLBACK_URL` was a Worker setting and went with it.
+- `GATEWAY_FORWARDED_FOR=replace` set on the yundera-prod gateway. nsp1's gateway had it
+  from its first deploy.
+- `gateway.entrypoint` A record removed from `nsl.sh.zone`; served serial 2026111601.
+- Config repo commit after: fbd6b99.
+- Not done: the end-to-end client-IP check through a whoami. holyhorse has no
+  unauthenticated header-echo app.
+- The Cloudflare `nsl.sh` zone: may be deleted by the user (§4); the committed zone file
+  is the fallback, as on staging.
