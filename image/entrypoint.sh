@@ -53,9 +53,11 @@ secondary)
   # Catch-up after a restart: PowerDNS does not re-check its secondary zones at start, so
   # one that was down while the primary changed (it missed the NOTIFY) would serve the old
   # copy until its SOA refresh (900 s). Once the server answers, ask the primary for each
-  # secondary zone and the catalog (2026-11-03 outage drill, #948). Background: the server
-  # is exec'd below; tini reaps this subshell.
-  (
+  # secondary zone and the catalog (2026-11-03 outage drill, #948). Background, double-forked:
+  # the server is exec'd below and pdns_server never reaps children it did not start, so a
+  # plain `( … ) &` stays a zombie under it. The outer subshell exits at once, the worker is
+  # reparented to tini (PID 1), and tini reaps it.
+  ( (
     for _ in $(seq 1 60); do
       pdns_control rping >/dev/null 2>&1 && break
       sleep 1
@@ -65,7 +67,7 @@ secondary)
       pdns_control retrieve "$z" >/dev/null 2>&1 && n=$((n + 1))
     done
     echo "nameserver: catch-up after start, asked the primary for $n zone(s)"
-  ) &
+  ) & )
   ;;
 *)
   echo "nameserver: set ROLE=primary or ROLE=secondary" >&2
