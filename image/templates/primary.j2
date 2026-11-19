@@ -4,6 +4,10 @@ primary=yes
 # zones on a consumer get no AXFR-MASTER-TSIG, so required TSIG blocks their transfers)
 allow-axfr-ips={{ DNS_SECONDARY_IPS }}
 also-notify={{ DNS_SECONDARY_IPS }}
+# NOTIFY goes to that list only (also-notify bypasses only-notify), not to the zone's NS
+# records too: a secondary on this host is reached by its public NS address through the
+# docker bridge, arrives from the bridge gateway, not from PRIMARY_IP, and refuses it
+only-notify=
 # zones created through the API get this SOA; serial managed per write
 default-soa-content={{ DNS_SOA_NS }}. hostmaster.@ 0 900 900 1209600 30
 default-soa-edit-api=DEFAULT
